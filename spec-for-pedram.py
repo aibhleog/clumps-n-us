@@ -3,6 +3,16 @@
 plotting up the 5 clumps pedram will include in his lensing paper
 
 
+21.1 --> 1a1.1
+22.1 --> 1a2.1
+23.1 --> 1a3.1
+24.1 --> 1a4.1
+25.1 --> 1a5.1
+26.1 --> 1a6.1
+27.1 --> 1a7.1
+28.1 --> 1a8.1
+
+
 '''
 import reproject
 import warnings
@@ -16,7 +26,8 @@ contmap,header = fits.getdata(galaxy['grating']['prism']['cont_map'],header=True
 
 path = 'plots-data/clumps/'
 clumps = [15,17,23,24,25]
-lens_clump_names = [26.2,25.2,22.2,23.2,24.2]
+old_lens_clump_names = [26.2,25.2,22.2,23.2,24.2]
+lens_clump_names = ['1a6.1','1a5.1','1a2.1','1a3.1','1a4.1']
 
 spec_g235m = pd.DataFrame({})
 
@@ -106,7 +117,7 @@ for i,j in enumerate(tclumps.index.values):
     # adding region ID
     xshift,yshift = -7,0
     if 1 < i < 4: yshift = -1.5 + (i-3)*2.5 # 24.2 and 23.2 are close together
-    print(yshift)
+    # print(yshift)
     txt = ax.text(pixel_region.center.x+xshift,
             pixel_region.center.y+yshift,
             lens_clump_names[i],ha='right',

@@ -1,9 +1,9 @@
 '''
 
-fancy new clump spectra 
+fancy new clump spectra, in two parts. 
 
 STEP1:  making the masks including partial coverage
-        this takes a WHILE to run.
+        this takes a WHILE to run... feel free to set & walk away haha
 
 
 '''
@@ -87,6 +87,11 @@ def mapping_pixel(x,y,scale=1):
 
 
 def get_pixel_coverage_mask(x,y):
+    '''
+    Given x,y coordinate, calculates the coverage of the region over this pixel
+    by breaking the pixel into a scale X scale pixel grid.
+
+    '''
     # using pixel coordinates to make a pixel
     rectangle = mapping_pixel(x,y,scale) # in scaled pixel coords, 1 pixel
     # counting points covered
@@ -99,7 +104,6 @@ def get_pixel_coverage_mask(x,y):
 
 
 # reading in cube
-# filename = galaxy['grating'][grating]['clipped']
 filename = path+galaxy['grating'][grating]['filename'][:-5]+'-FSbkgd.fits'
 data, header = fits.getdata(filename,header=True)
 
@@ -111,20 +115,21 @@ data_slice = data[sli]
 
 # CLUMPS DEFINED BY GOURAV & BRIAN
 clumps = pd.read_csv('plots-data/clumps/region-files/'+\
-                     # 'sgas2111_clumps_nircam_rgb-shiftedNIRSpec-pix.txt',sep=',',
                      f'{target.lower()}_clumps_nircam_rgb-shiftedNIRSpec-shiftingindividual{extra}-pix.txt',
                      sep=',',names=['x','y','w'])
 clumps[['x','y']] -= 1 # subtract 1 from x,y for DS9 --> python
-clumps['h'] = clumps.w.values.copy()
-clumps['a'] = 0 # degree
-clumps[['w','h']] *= 2 # radius --> diameter b/c Ellipse not Circle
-clumps['ID'] = [int(f+1) for f in clumps.index.values]
+clumps['h'] = clumps.w.values.copy() # circle region, making into ellipse
+clumps['a'] = 0 # degree, angle
+clumps[['w','h']] *= 2 # radius --> diameter b/c Ellipse not Circle!!
+clumps['ID'] = [int(f+1) for f in clumps.index.values] # just to keep track
 
 if target == 'SGAS2111':
-    # dropping other source clump
+    # dropping other source clump, was noted in region file by Gourav+ but isn't this galaxy
     clumps.drop(index=37,inplace=True)
 
-# dropping any with negative X,Y or over max X,Y values (not in IFS FOV)
+
+# NOT IN IFS FOV (i.e., NIRCam FOV >> NIRSpec/IFS FOV)
+# dropping any with negative X,Y or over max X,Y values
 clumps = clumps.query('x > 0 and y > 0'+\
                      f'and x < {data.shape[2]}'+\
                      f'and y < {data.shape[1]}').copy()
@@ -143,7 +148,7 @@ def add_ellipse(data,x,y,w,h,a,alph=0.3,c='r',rad=0):
     return ellipseN,pointsN
 
 
-
+# SCALE VALUE --> HOW MANY PIXELS IN GRID
 scale = 5 # makes a 5X5 grid for each pixel
 
 # rebinning to more points for the refined part!

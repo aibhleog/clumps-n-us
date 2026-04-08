@@ -3,6 +3,8 @@
 STEP2:  integrating the spectra using the pixel masks from Step 1
 
 
+NOTE: does this for both the G235M and prism spectra at the same time.
+
 '''
 
 from fitting_ifu_spectra import *
@@ -32,6 +34,7 @@ def integrate_spec(s3d,mask):
     array = np.nansum(s3d * longmask, axis=(1,2))
     return array.copy()
 
+
 def convert_MJy_sr_to_fnu(dataframe,pixar_sr):
     dataframe[['fnu','fnuerr']] *= pixar_sr * 1e6 * 1e-23 # MJy/sr -> erg/s/cm2/Hz
     return dataframe.copy()
@@ -57,7 +60,6 @@ def get_no_line(wl,z_sys):
 
 
 # reading in cube g235m
-# filename = galaxy['grating']['g235m']['clipped']
 filename = path+galaxy['grating']['g235m']['filename'][:-5]+'-FSbkgd.fits'
 data, header = fits.getdata(filename,header=True)
 error = fits.getdata(filename,ext=2)
@@ -67,7 +69,6 @@ wav1 = np.arange(header['CRVAL3'],  # wavelength in micron
 pixar_sr1 = header['PIXAR_SR'] # pixel area, in sr
 
 # reading in cube prism
-# filename2 = galaxy['grating']['prism']['clipped']
 filename2 = path+galaxy['grating']['prism']['filename'][:-5]+'-FSbkgd.fits'
 data2, header2 = fits.getdata(filename2,header=True)
 error2 = fits.getdata(filename2,ext=2)
@@ -82,19 +83,21 @@ pixar_sr2 = header2['PIXAR_SR'] # pixel area, in sr
 
 # CLUMPS DEFINED BY GOURAV & BRIAN
 clumps = pd.read_csv('plots-data/clumps/region-files/'+\
-                     # 'sgas2111_clumps_nircam_rgb-shiftedNIRSpec-pix.txt',sep=',',
                      f'{target.lower()}_clumps_nircam_rgb-shiftedNIRSpec-shiftingindividual-pix.txt',
                      sep=',',names=['x','y','w'])
 clumps[['x','y']] -= 1 # subtract 1 from x,y for DS9 --> python
-clumps['h'] = clumps.w.values.copy()
-clumps['a'] = 0 # degree
-clumps[['w','h']] *= 2 # radius --> diameter b/c Ellipse not Circle
-clumps['ID'] = [int(f+1) for f in clumps.index.values]
+clumps['h'] = clumps.w.values.copy() # circle region, making into ellipse
+clumps['a'] = 0 # degree, angle
+clumps[['w','h']] *= 2 # radius --> diameter b/c Ellipse not Circle!!
+clumps['ID'] = [int(f+1) for f in clumps.index.values] # just to keep track
+
 
 if target == 'SGAS2111':
-    # dropping other source clump
+    # dropping other source clump, was noted in region file by Gourav+ but isn't this galaxy
     clumps.drop(index=37,inplace=True)
 
+
+# NOT IN IFS FOV (i.e., NIRCam FOV >> NIRSpec/IFS FOV)
 # dropping any with negative X,Y or over max X,Y values (not in IFS FOV)
 clumps = clumps.query('x > 0 and y > 0'+\
                      f'and x < {data.shape[2]}'+\
@@ -102,9 +105,11 @@ clumps = clumps.query('x > 0 and y > 0'+\
 
 
 
-
+# making list of colors from the cmasher colormap "guppy"
 cmap = plt.get_cmap('cmr.guppy')
 colors = [cmap(j) for j in np.linspace(0.05,0.95,len(clumps))]
+
+
 
 
 # RUNNING THROUGH MASKS MAKING SPECTRA
@@ -150,7 +155,7 @@ for i,j in enumerate(clumps.index.values.copy()):
     final_spec = spec1.copy()
     final_spec2 = spec2.copy()
 
-    
+    # plotting prism
     ax.step(final_spec2.wave,final_spec2.fnu,where='mid',alpha=0.8,
             label=f'Clump {ID}',lw=1,color=colors[i])
     # spect.append(final_spec2.copy())
