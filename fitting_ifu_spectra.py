@@ -140,7 +140,40 @@ def get_colors(cmap,size):
     cmap = plt.get_cmap(cmap)
     colors = [cmap(j) for j in np.linspace(0,0.8,size)]
     return colors
-        
+
+
+def add_contours(ax,data,levels,kwargs={}):
+    x0,y0 = np.arange(0,data.shape[1]),np.arange(0,data.shape[0])
+    g = np.meshgrid(x0,y0)
+    contours = ax.contour(g[0],g[1],data,levels,
+                  origin='upper',alpha=0.8,
+                  linewidths=1.8,**kwargs)
+
+
+
+def nirspec_R(lam,mode='FS',filter_grating='f290lp-g395m'):
+    '''
+    Using Eq2 from Shajib+2025b. Wavelengths in microns, velocities in km/s.
+    Shajib's github repo: github.com/ajshajib/nirspec_resolution
+
+    Can specify between FS and IFS modes and also grating-filter combos.
+    '''
+    # reading in the Shajib table
+    sha = pd.read_csv('/Users/tahutch1/data/raw/jwst/shajib-resolution-table.txt',sep=r'\s+')
+    sha['lam_piv'] /= 1e4 # in microns
+    filt,grat = filter_grating.split('-')
+    indx = sha.query(f'grating == "{grat.upper()}" and filter == "{filt.upper()}" and mode == "{mode}"').index[0]
+    lam_piv,sig_prime_piv,alpha = sha.loc[indx,['lam_piv','sig_prime_piv','alpha']].values[:]
+
+    # getting resolution
+    sig_pn = 6.9 # +/- 0.49 km/s
+    part1 = (sig_prime_piv / (1+alpha*(lam-lam_piv)))
+    part2 = sig_pn
+    sig_inst = np.sqrt(part1**2 - part2**2)
+    return 2.998e5/(2.355*sig_inst) # returns R(lam)
+
+
+    
         
 def gaussian(xaxis, mean, A1, sig):
     '''
@@ -190,6 +223,27 @@ def spec_wave_range(spec,wave_range,index=False):
         spec = spec.index.values
     
     return spec
+
+
+def get_wave(d,h):
+    '''
+    Get the wavelength array 
+    
+    INPUTS:
+    >> d,h  ----------  data cube and header info
+                       
+    OUTPUTS:
+    >> wave ---------  observed wavelength array [microns]
+    '''
+
+    # rest of prep
+    wave = np.arange(h['CRVAL3'], 
+                     h['CRVAL3']+(h['CDELT3']*len(d)), 
+                     h['CDELT3'])
+    
+    if len(wave)>len(d): wave = wave[:-1].copy()
+    return wave.copy()
+
 
 
 def get_spec(x,y,dd,h,ee=None,verbose=False,cgs=False):
@@ -303,6 +357,36 @@ def convert_MJy_cgs(spec):
     spec['flamerr'] *= 2.998e18 / (spec.wave.values*1e4)**2 # fnu --> flam
     
     return spec.copy()
+
+
+def convert_3D_MJy_sr_to_cgs(arr,h):
+    # taking nominal pixel area from FITS header for data
+    pix_area = h['PIXAR_SR'] # in steradians
+    arr *= pix_area
+    
+    wave = np.arange(h['CRVAL3'], 
+                     h['CRVAL3']+(h['CDELT3']*len(arr)), 
+                     h['CDELT3'])
+    if len(wave)>len(arr): wave = wave[:-1].copy()
+    
+    s = np.concatenate(([1],arr.shape[1:]))
+    new_wave = np.tile(wave[:, np.newaxis, np.newaxis],s)
+
+    arr *= 1e6 # MJy --> Jy
+    arr *= 1e-23 # Jy --> erg/s/cm/Hz (fnu)
+    arr *= 2.998e18 / (new_wave*1e4)**2 # fnu --> flam
+    return arr
+
+
+def convert_2D_MJy_sr_to_cgs(arr,h,wave):
+    # taking nominal pixel area from FITS header for data
+    pix_area = h['PIXAR_SR'] # in steradians
+    arr *= pix_area
+    # conversions
+    arr *= 1e6 # MJy --> Jy
+    arr *= 1e-23 # Jy --> erg/s/cm/Hz (fnu)
+    arr *= 2.998e18 / (wave*1e4)**2 # fnu --> flam
+    return arr
 
 
 def moving_average(a, n=3):

@@ -16,7 +16,7 @@ from jwst_templates import continuum
 
 
 target = 'SGAS1110'
-saveit = True 
+saveit = False 
 grating = 'prism'
 
 
@@ -158,7 +158,7 @@ for i,j in enumerate(clumps.index.values.copy()):
     # plotting prism
     ax.step(final_spec2.wave,final_spec2.fnu,where='mid',alpha=0.8,
             label=f'Clump {ID}',lw=1,color=colors[i])
-    # spect.append(final_spec2.copy())
+    spect.append(final_spec2.copy())
 
     if saveit == True:
         final_spec.to_csv(f'plots-data/clumps/{target}-clump{ID}-spectrum-g235m.txt',
@@ -188,7 +188,7 @@ for i,j in enumerate(clumps.index.values.copy()):
 
 
 plt.tight_layout()
-plt.savefig(f'plots-data/clumps/{target}-clumps-spectra.pdf')
+# plt.savefig(f'plots-data/clumps/{target}-clumps-spectra.pdf')
 plt.show()
 plt.close('all')
 

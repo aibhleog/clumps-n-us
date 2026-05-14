@@ -1,3 +1,6 @@
+# added by Taylor -- so that I can manually add files and not have "untracked" warnings
+*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
