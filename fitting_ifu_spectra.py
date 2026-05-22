@@ -155,6 +155,7 @@ def nirspec_R(lam,mode='FS',filter_grating='f290lp-g395m'):
     '''
     Returns the NIRSpec resolution at provided wavelength, using the
     observing mode as a key (as IFS and MSA+FS are slightly different).
+    --- WAVELENGTH IN MICRONS, PLEASE
 
     For the medium- & high-resolution gratings, this uses the data & fits
     measured in Shajib+2025b. For the prism, this uses data measured by
