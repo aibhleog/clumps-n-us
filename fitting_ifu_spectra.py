@@ -153,26 +153,88 @@ def add_contours(ax,data,levels,kwargs={}):
 
 def nirspec_R(lam,mode='FS',filter_grating='f290lp-g395m'):
     '''
-    Using Eq2 from Shajib+2025b. Wavelengths in microns, velocities in km/s.
-    Shajib's github repo: github.com/ajshajib/nirspec_resolution
+    Returns the NIRSpec resolution at provided wavelength, using the
+    observing mode as a key (as IFS and MSA+FS are slightly different).
 
+    For the medium- & high-resolution gratings, this uses the data & fits
+    measured in Shajib+2025b. For the prism, this uses data measured by
+    Jane Rigby (for FS) and from an STScI report by Glidic+2025.
+    
     Can specify between FS and IFS modes and also grating-filter combos.
+    HOWEVER note that we do not currently have prism in IFS measured -- for now,
+    using the MSA+FS fit measured by Jane Rigby (which includes MSA data measured
+    in an STScI report by Glidic+2025, linked below).
+
+    References:
+    O'Brien+, in prep (includes Jane Rigby's measurements)
+    Shajib+2025b; github: github.com/ajshajib/nirspec_resolution
+    Glidic+2025 report, measuring calibration program CAL-06442 in MSA:
+    stsci.edu/files/live/sites/www/files/home/jwst/documentation/technical-documents/_documents/JWST-STScI-009239.pdf
     '''
-    # reading in the Shajib table
-    sha = pd.read_csv('/Users/tahutch1/data/raw/jwst/shajib-resolution-table.txt',sep=r'\s+')
-    sha['lam_piv'] /= 1e4 # in microns
-    filt,grat = filter_grating.split('-')
-    indx = sha.query(f'grating == "{grat.upper()}" and filter == "{filt.upper()}" and mode == "{mode}"').index[0]
-    lam_piv,sig_prime_piv,alpha = sha.loc[indx,['lam_piv','sig_prime_piv','alpha']].values[:]
+    # MSA & FS are nearly identical, using FS resolution curves for MSA
+    if mode.upper() == 'MSA': mode = 'FS'
 
-    # getting resolution
-    sig_pn = 6.9 # +/- 0.49 km/s
-    part1 = (sig_prime_piv / (1+alpha*(lam-lam_piv)))
-    part2 = sig_pn
-    sig_inst = np.sqrt(part1**2 - part2**2)
-    return 2.998e5/(2.355*sig_inst) # returns R(lam)
+    # for the medium & high res stuff
+    if filter_grating.lower() != 'prism-clear':
+        
+        # reading in the Shajib table
+        sha = pd.read_csv('/Users/tahutch1/data/raw/jwst/shajib-resolution-table.txt',sep=r'\s+')
+        sha['lam_piv'] /= 1e4 # in microns
+        filt,grat = filter_grating.split('-')
+        indx = sha.query(f'grating == "{grat.upper()}" and filter == "{filt.upper()}" and mode == "{mode.upper()}"').index[0]
+        lam_piv,sig_prime_piv,alpha = sha.loc[indx,['lam_piv','sig_prime_piv','alpha']].values[:]
+
+        # getting resolution
+        sig_pn = 6.9 # +/- 0.49 km/s
+        part1 = (sig_prime_piv / (1+alpha*(lam-lam_piv)))
+        part2 = sig_pn
+        sig_inst = np.sqrt(part1**2 - part2**2)
+
+        R = 2.998e5/(2.355*sig_inst)
+    
+    # for the prism, using polynomial fit from Jane Rigby (work described in
+    # appendix of O'Brien+, in prep; also uses data from Glidic+2025)
+    else:
+        # params from FS+MSA fit from in-flight JWST/NIRSpec data
+        # (using the same curve for IFS, for now, until in-flight measured) 
+        c0,c1,c2 = [108.1099,-84.02944,26.37992]
+        R = c0 + c1*x + c2*x**2
+    
+    # when returning, rounds to the nearest tens place
+    return round(R,-1) # returns R(lam)
 
 
+
+
+def get_ew(z,line_flux,cont_flux,wave,contsub=False):
+    '''
+    Returns the restframe equvalent width, in Angstroms.
+
+    INPUTS:
+    > z: redshift
+    > line_flux: the 1D flux spectrum of the line [erg/s/cm^2/A]
+    > cont_flux: the 1D continuum spectrum &/or fit [erg/s/cm^2/A]
+    > wave: the 1D wavelength array [angstroms!]
+    > contsub (opt): flags if line_flux is continuum-subtracted
+
+    RETURNS:
+    > ew_rest: restframe equivalent width, in angstroms
+    
+    '''
+    # flux spectrum IS continuum subtracted already
+    if contsub == True:
+        # don't need to subtract by 1 cause this is essentially
+        # (flux - cont) / cont
+        ew_obs = np.trapezoid( (line_flux / cont_flux), wave)
+    # flux spectrum is NOT continuum subtracted
+    else:
+        ew_obs = np.trapezoid( (line_flux / cont_flux) - 1, wave)
+
+    # de-redshifting
+    ew_rest = ew_obs / (1+z)
+    return ew_rest
+
+    
     
         
 def gaussian(xaxis, mean, A1, sig):
