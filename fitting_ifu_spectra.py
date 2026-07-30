@@ -32,11 +32,39 @@ import pandas as pd
 import astropy.io.fits as fits
 from astropy.wcs import WCS
 import sys,json
+sys.path.append('../')
 
 
 def veloff(z1,z2):
     delv = 2.998e5 * (z2 - z1) / (1 + z1)
     return delv # in km/s
+
+
+def kms2sig(zlam): return 1/2.35/3e05*zlam # units matching input ref wavelength
+
+def kms2sigdisp(zlam): return 1/3e05*zlam # units matching input ref wavelength
+
+
+
+# returning S/N cut map & also removes zeros (non-spaxels)
+def SNRCUT(signal,error,snr_cut=5):
+    signal[abs(signal/error) < snr_cut] = np.nan
+    signal = NOZERO(signal.copy())
+    return signal.copy()
+
+# removing zeros (non-spaxels)
+def NOZERO(array):
+    array[array==0] = np.nan
+    return array.copy()
+
+# capping array at specified value
+def CAPIT(array,value,sign='>'):
+    condition = eval(f'array{sign}value')
+    array[condition] = np.nan
+    return array.copy()
+
+
+
 
 
 def get_galaxy_info(target,grat):
@@ -136,9 +164,9 @@ def get_mask(galaxy,array_2d=False,layers=False,subpix=False,extra=None):
             sys.exit(0) # kills script
 
 
-def get_colors(cmap,size):
+def get_colors(cmap,size,ymax=0.8):
     cmap = plt.get_cmap(cmap)
-    colors = [cmap(j) for j in np.linspace(0,0.8,size)]
+    colors = [cmap(j) for j in np.linspace(0,ymax,size)]
     return colors
 
 
@@ -153,8 +181,9 @@ def add_contours(ax,data,levels,kwargs={}):
 
 def nirspec_R(lam,mode='FS',filter_grating='f290lp-g395m'):
     '''
-    Returns the NIRSpec resolution at provided wavelength, using the
-    observing mode as a key (as IFS and MSA+FS are slightly different).
+    Returns the measured, in-flight NIRSpec resolution at a provided 
+    wavelength, using the observing mode as a key (as IFS and MSA+FS 
+    are slightly different).
     --- WAVELENGTH IN MICRONS, PLEASE
 
     For the medium- & high-resolution gratings, this uses the data & fits
@@ -166,6 +195,11 @@ def nirspec_R(lam,mode='FS',filter_grating='f290lp-g395m'):
     using the MSA+FS fit measured by Jane Rigby (which includes MSA data measured
     in an STScI report by Glidic+2025, linked below).
 
+    USER NOTE:  
+    The MSA & FS are nearly identical in resolution, as the FS used for
+    this measurement is the S200A slit; the same width as MSA slitlets.
+    -- so, if MSA is specified, the FS measurements will be used
+
     References:
     O'Brien+, in prep (includes Jane Rigby's measurements)
     Shajib+2025b; github: github.com/ajshajib/nirspec_resolution
@@ -176,7 +210,7 @@ def nirspec_R(lam,mode='FS',filter_grating='f290lp-g395m'):
     if mode.upper() == 'MSA': mode = 'FS'
 
     # for the medium & high res stuff
-    if filter_grating.lower() != 'prism-clear':
+    if filter_grating.lower() != 'clear-prism':
         
         # reading in the Shajib table
         sha = pd.read_csv('/Users/tahutch1/data/raw/jwst/shajib-resolution-table.txt',sep=r'\s+')
@@ -199,10 +233,14 @@ def nirspec_R(lam,mode='FS',filter_grating='f290lp-g395m'):
         # params from FS+MSA fit from in-flight JWST/NIRSpec data
         # (using the same curve for IFS, for now, until in-flight measured) 
         c0,c1,c2 = [108.1099,-84.02944,26.37992]
-        R = c0 + c1*x + c2*x**2
+        R = c0 + c1*lam + c2*lam**2
+
     
-    # when returning, rounds to the nearest tens place
-    return round(R,-1) # returns R(lam)
+    # if input wavelength is actually an array of wavelengths
+    if isinstance(R,float) == False: return R # an array of values
+    
+    # if single wavelength -- when returning, rounds to the nearest tens place
+    else: return round(R,-1) # returns R(lam)
 
 
 
@@ -288,7 +326,14 @@ def spec_wave_range(spec,wave_range,index=False):
     return spec
 
 
-def get_wave(d,h):
+
+def get_global_bins(list_of_data,bins=20):
+    __, bins = np.histogram(np.concatenate(list_of_data),bins=bins)
+    return bins
+    
+
+
+def get_wave(d,h,threed=False):
     '''
     Get the wavelength array 
     
@@ -305,6 +350,12 @@ def get_wave(d,h):
                      h['CDELT3'])
     
     if len(wave)>len(d): wave = wave[:-1].copy()
+
+    if threed == True:
+        s = np.concatenate(([1],d.shape[1:]))
+        new_wave = np.tile(wave[:, np.newaxis, np.newaxis],s)
+        wave = new_wave.copy()
+        
     return wave.copy()
 
 
@@ -365,14 +416,14 @@ def get_spec(x,y,dd,h,ee=None,verbose=False,cgs=False):
     spec = pd.DataFrame({'wave':wave,'flam':dat,'flamerr':err})
 
     if cgs == True:
-        spec = convert_MJy_cgs(spec.copy())
+        spec = convert_MJy_cgs(spec.copy(),h=h)
 
     
     if verbose == True: return spec.copy(), [x,y]
     else: return spec.copy()
 
 
-def convert_MJy_sr_to_MJy(spec):
+def convert_MJy_sr_to_MJy(spec,h=None):
     '''
     The spectra from the reduced data are in MJy/sr.
     Converting to MJy so they can be converted to cgs units.
@@ -386,6 +437,8 @@ def convert_MJy_sr_to_MJy(spec):
     '''
     # taking nominal pixel area from FITS header for data
     pix_area = 2.35040007004737E-13 # in steradians
+    if h: pix_area = h['PIXAR_SR']
+    
     
     # converting spectrum flam 
     spec['flam'] *= pix_area # MJy/sr --> MJy
@@ -397,7 +450,7 @@ def convert_MJy_sr_to_MJy(spec):
     
 
 
-def convert_MJy_cgs(spec):
+def convert_MJy_cgs(spec,h=None):
     '''
     INPUTS:
     >> spec  --------  a pandas dataframe set up with columns
@@ -407,7 +460,7 @@ def convert_MJy_cgs(spec):
     >> spec ---------  the same pandas dataframe but in cgs
     '''
     # converting from MJy/sr to MJy
-    spec = convert_MJy_sr_to_MJy(spec.copy()) 
+    spec = convert_MJy_sr_to_MJy(spec.copy(),h=h) 
     
     # converting spectrum flam to cgs units
     spec['flam'] *= 1e6 # MJy --> Jy
@@ -557,4 +610,87 @@ def convert_jwst_to_cgs(spec,pix_area):
     spec['flamerr'] *= 2.998e18 / (spec.wave.values*1e4)**2 # fnu --> flam
     
     return spec.copy()
+
+
+
+############# BPT LINES FROM NIKKO ################
+
+def ohno_backhaus_2022(logneiiioii):
+    '''
+    defining the unv087 dividing line from Backhaus et al. 2021.
+    Singularity at log(NeIII/OII) = 0.285
+    '''    
+    return 0.35/(2.8*logneiiioii - 0.8) + 0.64
+    
+
+def bpt_kewley_2001(logniiha):
+    '''
+    Defining the BPT AGN/SF dividing line from Kewley 2001.
+    '''    
+    logniiha = logniiha[logniiha<0.5].copy()
+    return logniiha, 0.61/(logniiha - 0.47) + 1.19   
+
+
+def O32_OIHa_kewley_2006(logoiha):
+    return -1.701 * logoiha - 2.163  
+
+
+def O32_OIHa_kewley_2006_liner(logoiha):
+    return 1.0 * logoiha + 0.7  
+
+
+def bpt_kauffmann_2003(logniiha):
+    '''
+    Defining the BPT AGN/SF dividing line from Kauffmann 2003.
+    '''    
+    logniiha = logniiha[logniiha<0.05].copy()
+    return logniiha, 0.61/(logniiha - 0.05) + 1.3    
+
+
+def vo87_trump_2015(logsiiha):
+    '''
+    Defining the unVO87 AGN/SF dividing line from Trump et al. 2015.
+    Singularity at log(SII/Ha) = 0.0917
+    '''    
+    logsiiha = logsiiha[logsiiha<0.1].copy()
+    return logsiiha, 0.48/(1.09*logsiiha - 0.10) + 1.3    
+
+
+def vo87_kewley_2006(logsiiha):
+    logsiiha = logsiiha[logsiiha<0.1].copy()
+    return logsiiha, 0.72/(logsiiha - 0.32) + 1.30    
+
+
+def vo87_kewley_2006_liner(logsiiha):
+    logsiiha = logsiiha[(logsiiha>-0.32)&(logsiiha<1)].copy()
+    return logsiiha, 1.89*logsiiha + 0.76
+
+
+def oibpt_kewley_2006(logoiha):
+    logoiha = logoiha[logoiha<-0.6].copy()
+    return logoiha, 0.73/(logoiha + 0.59) + 1.33   
+
+
+def oibpt_kewley_2006_liner(logoiha):
+    logoiha = logoiha[(logoiha>-1.13)&(logoiha<3)].copy()
+    return logoiha, 1.18*logoiha + 1.30
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

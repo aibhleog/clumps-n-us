@@ -19,6 +19,7 @@ import warnings
 import matplotlib.patheffects as PathEffects
 warnings.filterwarnings("ignore")
 from fitting_ifu_spectra import *
+import smoothing
 galaxy, z, datapath, grating = get_galaxy_info('SGAS1110',grat='g235m')
 
 # reading in data
@@ -36,16 +37,18 @@ for i in range(len(clumps)):
 
     if i == 0:
         spec_g235m['wave'] = filler_g235m.wave.values.copy()
+    if i == 4:
+        maskit = filler_g235m.query('fnu>1e-30 and 2.1 < wave < 2.2').index.values
+        filler_g235m['fnu'][maskit] = np.nan
 
     spec_g235m[f'clump{clumps[i]}'] = filler_g235m.fnu.values.copy()
-
 
 
 # looking at spectra
 cmap = plt.get_cmap('cmr.guppy')
 colors = [cmap(j) for j in np.linspace(0.05,0.6,len(clumps))] 
 colors = colors[::-1]
-
+scale = 1#1e-29
 
 plt.figure(figsize=(13,4.5))
 gs = gridspec.GridSpec(1,2,width_ratios=[3,1],wspace=0.02)
@@ -55,7 +58,9 @@ gs = gridspec.GridSpec(1,2,width_ratios=[3,1],wspace=0.02)
 ax = plt.subplot(gs[0])
 
 for i in range(len(clumps)):
-    ax.step(spec_g235m.wave,spec_g235m[f'clump{clumps[i]}'],
+    smoothed = smoothing.smooth(spec_g235m[f'clump{clumps[i]}'].values.copy()/scale,
+                                window_len=9)
+    ax.step(spec_g235m.wave,smoothed,
             where='mid',alpha=0.65,
             zorder=5,color=colors[i])
 
@@ -64,15 +69,16 @@ names = [r'H$\beta$','','[OIII]','HeI',r'H$\alpha$','[SII]']
 for i,l in enumerate([.4864,.4960,.5008,.5877,.6564,.6717]):
     ax.axvline(l*(1+z),color='k',
                ls=':',zorder=-10,lw=0.85)
-    ax.text(l*(1+z)+0.0045,1e-29,names[i],rotation=90)
+    ax.text(l*(1+z)+0.0045,1e-29/scale,names[i],rotation=90)
 
+# ax.set_ylabel(r'$f_\nu$ [10$^{%s}$ erg s$^{-1}$ cm$^{-2}$ Hz$^{-1}$]'%int(np.log10(scale)))
 ax.set_ylabel(r'$f_\nu$ [erg s$^{-1}$ cm$^{-2}$ Hz$^{-1}$]')
 ax.set_xlabel('observed wavelength [microns]')
 ax.set_yscale('log')
-ax.set_ylim(5e-32,)
+ax.set_ylim(5e-32/scale,)
 ax.set_xlim(spec_g235m.wave.min(),2.38)
 
-ax.text(1.85,2e-29,'z$_{spec}$ = '+f'{z}',
+ax.text(1.85,1e-29/scale,'z$_{spec}$ = '+f'{z}',
         fontfamily='serif',fontsize=17)
 
 
